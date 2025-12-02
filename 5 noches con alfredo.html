@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cinco Noches en el Navegador - Remake</title>
+    <style>
+        :root {
+            --bg-color: #050505;
+            --terminal-green: #33ff33;
+            --ui-gray: #4a4a4a;
+            --danger-red: #ff3333;
+        }
+
+        body {
+            margin: 0; padding: 0;
+            background-color: var(--bg-color);
+            color: white;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            user-select: none;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* --- Efectos de Pantalla (CRT/Static) --- */
+        #screen-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 100;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+            box-shadow: inset 0 0 80px rgba(0,0,0,0.9);
+        }
+
+        .static-noise {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            opacity: 0.06; z-index: 99; pointer-events: none;
+            background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIj48ZmlsdGVyIGlkPSJnoiPjxmZVR1cmJ1bGVuY2UgdHlwZT0iZnJhY3RhbE5vaXNlIiBiYXNlRnJlcXVlbmN5PSIwLjY1IiBudW1PY3RhdmVzLTMiIHN0aXRjaFRpbGVzPSJzdGl0Y2giLz48L2ZpbHRlcj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWx0ZXI9InVybCgjZykiIG9wYWNpdHk9IjAuNSIvPjwvc3ZnPg==');
+        }
+
+        /* --- Contenedor Principal --- */
+        #game-container {
+            width: 100%; height: 100%; position: relative; background: #000; display: none;
+        }
+
+        /* --- La Oficina --- */
+        #office-view {
+            width: 100%; height: 100%; background: #111; position: relative;
+            transition: background 0.1s; box-shadow: inset 0 0 150px #000;
+        }
+        .wall-left, .wall-right {
+            position: absolute; top: 0; bottom: 0; width: 15%; background: #1a1a1a; z-index: 5; box-shadow: 0 0 20px #000;
+        }
+        .wall-left { left: 0; border-right: 5px solid #0f0f0f; }
+        .wall-right { right: 0; border-left: 5px solid #0f0f0f; }
+        .door-frame {
+            position: absolute; top: 15%; bottom: 0; width: 15%; background: #000; z-index: 4; overflow: hidden;
+        }
+        .door-frame.left { left: 15%; }
+        .door-frame.right { right: 15%; }
+        .security-door {
+            position: absolute; top: -100%; width: 100%; height: 100%;
+            background: repeating-linear-gradient(45deg, #333, #333 10px, #222 10px, #222 20px);
+            transition: top 0.3s cubic-bezier(0.1, 0.7, 1.0, 0.1); box-shadow: 0 10px 20px #000; z-index: 6;
+        }
+        .door-closed { top: 0; }
+        #desk {
+            position: absolute; bottom: 0; left: 20%; width: 60%; height: 25%;
+            background: #2a2a2a; border-top: 2px solid #333; z-index: 10;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .fan {
+            width: 80px; height: 80px; border: 5px solid #444; border-radius: 50%;
+            position: relative; animation: spin 0.2s linear infinite;
+        }
+        .fan::after {
+            content: ''; position: absolute; top: 10%; left: 45%; width: 10%; height: 80%; background: #555;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        /* --- Controles --- */
+        .controls-container {
+            position: absolute; top: 40%; z-index: 20; display: flex; flex-direction: column; gap: 10px;
+        }
+        .controls-left { left: 2%; }
+        .controls-right { right: 2%; }
+        .btn {
+            width: 60px; height: 60px; border: 2px solid #555; background: #222; color: #fff;
+            font-weight: bold; cursor: pointer; border-radius: 5px; font-size: 10px; box-shadow: 0 4px 0 #000;
+        }
+        .btn:active { transform: translateY(4px); box-shadow: none; }
+        .btn.active { background: var(--terminal-green); color: #000; box-shadow: 0 0 10px var(--terminal-green); border-color: #fff; }
+        .btn-light.active { background: #fff; color: #000; box-shadow: 0 0 15px #fff; }
+
+        /* --- HUD --- */
+        #hud {
+            position: absolute; bottom: 20px; left: 20px; z-index: 30; font-size: 1.2rem; text-shadow: 0 0 5px var(--bg-color);
+        }
+        .usage-bar { margin-top: 5px; display: flex; gap: 2px; }
+        .usage-block { width: 15px; height: 10px; background: #333; }
+        .usage-block.on { background: var(--terminal-green); box-shadow: 0 0 5px var(--terminal-green); }
+        #clock {
+            position: absolute; top: 20px; right: 20px; z-index: 30; font-size: 1.5rem; font-weight: bold;
+        }
+
+        /* --- Tablet y Cámaras --- */
+        #camera-toggle {
+            position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+            width: 300px; height: 40px; background: rgba(255, 255, 255, 0.1); border: 1px solid #555;
+            color: #fff; cursor: pointer; z-index: 40; display: flex; justify-content: center;
+            align-items: center; font-size: 0.8rem; transition: background 0.2s;
+        }
+        #camera-toggle:hover { background: rgba(255, 255, 255, 0.2); }
+
+        #camera-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 35; display: none; flex-direction: column;
+        }
+        .camera-view {
+            flex-grow: 1; position: relative; background: #0a0a0a; border: 2px solid #333; margin: 20px; overflow: hidden;
+        }
+        .cam-noise {
+            width: 100%; height: 100%; position: absolute; top:0; left:0;
+            background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIj48ZmlsdGVyIGlkPSJnoiPjxmZVR1cmJ1bGVuY2UgdHlwZT0iZnJhY3RhbE5vaXNlIiBiYXNlRnJlcXVlbmN5PSIwLjc1IiBudW1PY3RhdmVzPSI0IiBzdGl0Y2hUaWxlcz0ic3RpdGNoIi8+PC9maWx0ZXI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsdGVyPSJ1cmwoI2cpIiBvcGFjaXR5PSIwLjQiLz48L3N2Zz4=');
+            opacity: 0.4; mix-blend-mode: overlay;
+            animation: noiseAnim 0.2s steps(3) infinite;
+            pointer-events: none;
+        }
+        @keyframes noiseAnim { 0% { transform: translate(0,0) scale(1); } 50% { transform: translate(5px, -5px) scale(1.01); } 100% { transform: translate(-5px, 5px) scale(1); } }
+
+        .cam-map {
+            position: absolute; bottom: 20px; right: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px;
+        }
+        .cam-btn {
+            width: 40px; height: 30px; background: #222; border: 1px solid #555; color: #fff; font-size: 10px; cursor: pointer;
+        }
+        .cam-btn.active { background: var(--terminal-green); color: #000; }
+        .cam-label {
+            position: absolute; top: 20px; left: 20px; font-size: 1.2rem; animation: blink 1s infinite; z-index: 10;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* --- NUEVOS VISUALES DE ENEMIGOS (CÁMARA) --- */
+        #cam-content {
+            position: absolute; top:0; left:0; width:100%; height:100%;
+            display: flex; justify-content: center; align-items: center;
+            filter: contrast(1.5) brightness(0.8) grayscale(0.8) blur(0.5px);
+        }
+
+        /* Silueta base */
+        .entity-silhouette {
+            width: 140px; height: 180px;
+            background: #080808;
+            border-radius: 45% 45% 40% 40%;
+            position: relative;
+            box-shadow: inset 0 0 30px rgba(0,0,0,0.9), 0 0 20px rgba(0,0,0,0.5);
+            animation: twitch 4s infinite alternate ease-in-out;
+        }
+
+        /* Ojos brillantes genéricos */
+        .entity-eyes {
+            position: absolute; top: 35%;
+            width: 18px; height: 18px;
+            border-radius: 50%;
+            background: white;
+            opacity: 0.8;
+            animation: blink-glow 0.1s infinite alternate;
+        }
+        .eye-left { left: 25%; }
+        .eye-right { right: 25%; }
+
+        /* Bonnie (Izquierda - Morado) */
+        .entity-bonnie .entity-eyes {
+            background: #a0f; box-shadow: 0 0 25px #a0f;
+        }
+        /* Orejas de Bonnie */
+        .entity-bonnie::before, .entity-bonnie::after {
+            content: ''; position: absolute; bottom: 85%;
+            width: 30px; height: 70px; background: #080808;
+            border-radius: 15px 15px 0 0;
+        }
+        .entity-bonnie::before { left: 15%; transform: rotate(-15deg); }
+        .entity-bonnie::after { right: 15%; transform: rotate(20deg); }
+
+        /* Chica (Derecha - Amarillo) */
+        .entity-chica .entity-eyes {
+            background: #ff0; box-shadow: 0 0 25px #ff0;
+            top: 40%; /* Ojos más bajos */
+        }
+        .entity-chica { border-radius: 55% 55% 50% 50%; height: 160px; width: 150px; } /* Más redonda */
+        /* Pico silueta */
+        .entity-chica::after {
+            content: ''; position: absolute; top: 55%; left: 50%; transform: translateX(-50%);
+            width: 40px; height: 20px; background: #111;
+            clip-path: polygon(0 0, 100% 0, 50% 100%);
+        }
+
+        @keyframes twitch {
+            0%, 90% { transform: translate(0,0) skew(0deg); }
+            91% { transform: translate(3px, -2px) skew(2deg); }
+            93% { transform: translate(-3px, 2px) skew(-3deg); }
+            95% { transform: translate(2px, 0) skew(1deg); }
+            100% { transform: translate(0,0) skew(0deg); }
+        }
+        @keyframes blink-glow {
+            from { opacity: 0.5; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1.1); filter: brightness(1.5); }
+        }
+
+        /* --- Enemigos en Oficina --- */
+        .monster-eyes {
+            position: absolute; top: 30%; width: 20px; height: 20px;
+            background: red; border-radius: 50%; box-shadow: 0 0 15px red; display: none;
+        }
+        .monster-eyes::after {
+            content: ''; position: absolute; left: 40px; width: 20px; height: 20px;
+            background: red; border-radius: 50%; box-shadow: 0 0 15px red;
+        }
+        .eyes-left { left: 40%; } .eyes-right { left: 40%; }
+
+        /* --- Pantallas de Estado y Jumpscare --- */
+        #jumpscare-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 200; display: none;
+            justify-content: center; align-items: center;
+        }
+        #scare-face {
+            width: 90%; height: 90%;
+            background: radial-gradient(circle at center, #fff 10%, #555 40%, #000 80%);
+            border-radius: 40%; position: relative;
+            animation: violentShake 0.05s infinite;
+            box-shadow: 0 0 50px #000 inset;
+        }
+        #scare-face::before, #scare-face::after {
+            content: ''; position: absolute; top: 25%;
+            width: 25%; height: 30%; background: #000; border-radius: 50%;
+        }
+        #scare-face::before { left: 15%; } #scare-face::after { right: 15%; }
+        #scare-mouth {
+            position: absolute; bottom: 5%; left: 50%; transform: translateX(-50%);
+            width: 70%; height: 50%; background: #000;
+            border-radius: 30% 30% 50% 50%;
+        }
+        @keyframes violentShake {
+            0% { transform: translate(5px, 5px) rotate(2deg); }
+            25% { transform: translate(-5px, -5px) rotate(-3deg); }
+            50% { transform: translate(-5px, 5px) rotate(4deg); }
+            75% { transform: translate(5px, -5px) rotate(-5deg); }
+            100% { transform: translate(0, 0) rotate(0deg); }
+        }
+
+        #start-screen, #game-over-screen, #win-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 150; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; text-align: center;
+        }
+        #game-over-screen, #win-screen { display: none; }
+        h1 { color: #fff; font-size: 3rem; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 5px; }
+        p { color: #888; margin-bottom: 30px; }
+        .start-btn {
+            padding: 15px 40px; background: transparent; color: #fff;
+            border: 2px solid #fff; font-family: inherit; font-size: 1.2rem;
+            cursor: pointer; transition: 0.2s;
+        }
+        .start-btn:hover { background: #fff; color: #000; }
+    </style>
+</head>
+<body>
+    <div id="screen-overlay"></div>
+    <div class="static-noise"></div>
+
+    <!-- PANTALLAS DE ESTADO -->
+    <div id="start-screen">
+        <h1>Night Shift v2</h1>
+        <p>Turno de Noche: 12:00 AM</p>
+        <p style="font-size: 0.8rem; color: #555;">Advertencia: Jumpscares ruidosos y luces estroboscópicas.</p>
+        <button class="start-btn" onclick="startGame()">EMPEZAR TURNO</button>
+    </div>
+    <div id="game-over-screen">
+        <h1 style="color: #900;">GAME OVER</h1>
+        <p id="death-msg">Se acabó tu turno.</p>
+        <button class="start-btn" onclick="location.reload()">REINTENTAR</button>
+    </div>
+    <div id="win-screen">
+        <h1 style="color: var(--terminal-green);">6:00 AM</h1>
+        <p>Has sobrevivido.</p>
+        <button class="start-btn" onclick="location.reload()">SALIR</button>
+    </div>
+
+    <!-- JUMPSCARE -->
+    <div id="jumpscare-overlay">
+        <div id="scare-face">
+            <div id="scare-mouth"></div>
+        </div>
+    </div>
+
+    <!-- JUEGO PRINCIPAL -->
+    <div id="game-container">
+        <!-- OFICINA -->
+        <div id="office-view">
+            <div class="wall-left"></div>
+            <div class="wall-right"></div>
+            <div class="door-frame left">
+                <div class="security-door" id="door-l"></div>
+                <div class="monster-eyes eyes-left" id="eyes-l"></div>
+            </div>
+            <div class="door-frame right">
+                <div class="security-door" id="door-r"></div>
+                <div class="monster-eyes eyes-right" id="eyes-r"></div>
+            </div>
+            <div id="desk"><div class="fan"></div></div>
+        </div>
+
+        <!-- CONTROLES -->
+        <div class="controls-container controls-left">
+            <button class="btn" id="btn-door-l" onclick="toggleDoor('l')">DOOR</button>
+            <button class="btn btn-light" id="btn-light-l" onmousedown="setLight('l', true)" onmouseup="setLight('l', false)" onmouseleave="setLight('l', false)">LIGHT</button>
+        </div>
+        <div class="controls-container controls-right">
+            <button class="btn" id="btn-door-r" onclick="toggleDoor('r')">DOOR</button>
+            <button class="btn btn-light" id="btn-light-r" onmousedown="setLight('r', true)" onmouseup="setLight('r', false)" onmouseleave="setLight('r', false)">LIGHT</button>
+        </div>
+
+        <!-- HUD -->
+        <div id="hud">
+            <div>Power: <span id="power-val">100</span>%</div>
+            <div class="usage-bar">
+                Usage: <div class="usage-block" id="u1"></div><div class="usage-block" id="u2"></div><div class="usage-block" id="u3"></div><div class="usage-block" id="u4"></div>
+            </div>
+        </div>
+        <div id="clock">12 AM</div>
+
+        <!-- CÁMARA -->
+        <button id="camera-toggle" onclick="toggleCamera()">[ SYSTEM MONITOR ]</button>
+        <div id="camera-screen">
+            <div class="cam-label" id="cam-name">CAM 1A</div>
+            <div class="camera-view" id="cam-display">
+                <div id="cam-content">
+                    <!-- Las siluetas se insertan aquí -->
+                </div>
+                <div class="cam-noise"></div>
+            </div>
+            <div class="cam-map">
+                <button class="cam-btn active" onclick="switchCam('1A')">1A</button>
+                <button class="cam-btn" onclick="switchCam('1B')">1B</button>
+                <button class="cam-btn" onclick="switchCam('5')">5</button>
+                <button class="cam-btn" onclick="switchCam('4A')">4A</button>
+                <button class="cam-btn" onclick="switchCam('4B')">4B</button>
+                <button class="cam-btn" onclick="switchCam('2A')">2A</button>
+                <button class="cam-btn" onclick="switchCam('2B')">2B</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- ESTADO Y CONFIGURACIÓN ---
+        const GAME = {
+            active: false, power: 100, cameraActive: false, currentCam: '1A',
+            doorL: false, doorR: false, lightL: false, lightR: false,
+            timeElapsed: 0, nightDuration: 360, dead: false
+        };
+
+        // IAs más agresivas para probar los visuales
+        const AI = {
+            bonnie: { location: '1A', path: ['1A', '1B', '5', '2A', '2B', 'OFFICE'], step: 0, level: 4 },
+            chica:  { location: '1A', path: ['1A', '1B', '4A', '4B', 'OFFICE'], step: 0, level: 4 },
+            tick: function() {
+                if (GAME.dead) return;
+                if (Math.random() * 20 < this.bonnie.level) this.moveEntity(this.bonnie, 'left');
+                if (Math.random() * 20 < this.chica.level) this.moveEntity(this.chica, 'right');
+            },
+            moveEntity: function(entity, side) {
+                if (entity.step === 4) {
+                    const doorClosed = (side === 'left' ? GAME.doorL : GAME.doorR);
+                    if (!doorClosed) jumpScare(side);
+                    else entity.step = Math.floor(Math.random() * 2);
+                } else entity.step++;
+                entity.location = entity.path[entity.step];
+                if(GAME.cameraActive) updateCamView();
+            }
+        };
+
+        // --- AUDIO ---
+        const AudioSys = {
+            ctx: null,
+            init: function() {
+                window.AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContext();
+            },
+            playTone: function(freq, type, duration, vol = 0.1, ramp = true) {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type; osc.frequency.value = freq;
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+                if(ramp) gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+                osc.start(); osc.stop(this.ctx.currentTime + duration);
+            },
+            playNoise: function(duration, vol = 0.05) {
+                if (!this.ctx) return;
+                const bufferSize = this.ctx.sampleRate * duration;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+                const gain = this.ctx.createGain();
+                gain.gain.value = vol;
+                noise.connect(gain); gain.connect(this.ctx.destination);
+                noise.start();
+            },
+            playAmbience: function() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine'; osc.frequency.value = 50; gain.gain.value = 0.03;
+                osc.connect(gain); gain.connect(this.ctx.destination); osc.start();
+                // Ruido de fondo estático intermitente
+                setInterval(() => { if(Math.random()>0.7) this.playNoise(0.5, 0.01); }, 2000);
+            },
+            sfxDoor: function() { this.playTone(100, 'square', 0.3, 0.2); },
+            sfxLight: function() { this.playTone(300, 'sawtooth', 0.1, 0.05); },
+            sfxCam: function() { this.playTone(1200, 'sine', 0.15, 0.05); this.playNoise(0.2, 0.1); },
+            sfxJumpscare: function() {
+                if (!this.ctx) return;
+                this.playNoise(2.5, 0.8); // Mucho ruido
+                const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(50, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1500, this.ctx.currentTime + 0.2);
+                osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 1.5);
+                gain.gain.setValueAtTime(0.8, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 2.5);
+                osc.connect(gain); gain.connect(this.ctx.destination); osc.start();
+            }
+        };
+
+        // --- CORE DEL JUEGO ---
+        function startGame() {
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('game-container').style.display = 'block';
+            AudioSys.init(); AudioSys.playAmbience();
+            GAME.active = true;
+            setInterval(() => AI.tick(), 4000);
+            setInterval(gameTick, 1000);
+        }
+
+        function gameTick() {
+            if (!GAME.active || GAME.dead) return;
+            GAME.timeElapsed++;
+            const hourDuration = GAME.nightDuration / 6;
+            let currentHour = Math.floor(GAME.timeElapsed / hourDuration);
+            if (currentHour === 0) currentHour = 12;
+            document.getElementById('clock').innerText = currentHour + (currentHour === 12 ? ' AM' : ' AM');
+            if (GAME.timeElapsed >= GAME.nightDuration) winGame();
+
+            let drain = 0.1;
+            if (GAME.doorL) drain += 0.3; if (GAME.doorR) drain += 0.3;
+            if (GAME.lightL) drain += 0.5; if (GAME.lightR) drain += 0.5;
+            if (GAME.cameraActive) drain += 0.2;
+            GAME.power -= drain;
+            if (GAME.power <= 0) { GAME.power = 0; powerOutage(); }
+            document.getElementById('power-val').innerText = Math.floor(GAME.power);
+            let usageLvl = Math.ceil(drain * 3);
+            for(let i=1; i<=4; i++) document.getElementById(`u${i}`).className = 'usage-block' + (i <= usageLvl ? ' on' : '');
+        }
+
+        // --- INTERACCIÓN ---
+        function toggleDoor(side) {
+            if (!GAME.active || GAME.power <= 0) return;
+            AudioSys.sfxDoor();
+            if (side === 'l') { GAME.doorL = !GAME.doorL; document.getElementById('door-l').classList.toggle('door-closed', GAME.doorL); document.getElementById('btn-door-l').classList.toggle('active'); }
+            else { GAME.doorR = !GAME.doorR; document.getElementById('door-r').classList.toggle('door-closed', GAME.doorR); document.getElementById('btn-door-r').classList.toggle('active'); }
+        }
+
+        function setLight(side, state) {
+            if (!GAME.active || GAME.power <= 0) return;
+            if (state) AudioSys.sfxLight();
+            const blindSpot = document.getElementById(side === 'l' ? 'eyes-l' : 'eyes-r');
+            const monsterHere = (side === 'l' ? AI.bonnie.step === 4 : AI.chica.step === 4);
+            if (side === 'l') { GAME.lightL = state; document.getElementById('btn-light-l').classList.toggle('active', state); document.querySelector('.door-frame.left').style.background = state ? '#222' : '#000'; blindSpot.style.display = (state && monsterHere) ? 'block' : 'none'; }
+            else { GAME.lightR = state; document.getElementById('btn-light-r').classList.toggle('active', state); document.querySelector('.door-frame.right').style.background = state ? '#222' : '#000'; blindSpot.style.display = (state && monsterHere) ? 'block' : 'none'; }
+        }
+
+        function toggleCamera() {
+            if (!GAME.active || GAME.power <= 0) return;
+            AudioSys.sfxCam();
+            GAME.cameraActive = !GAME.cameraActive;
+            document.getElementById('camera-screen').style.display = GAME.cameraActive ? 'flex' : 'none';
+            if (GAME.cameraActive) updateCamView();
+        }
+
+        function switchCam(cam) {
+            if (!GAME.active) return;
+            AudioSys.sfxCam(); GAME.currentCam = cam;
+            document.querySelectorAll('.cam-btn').forEach(b => b.classList.toggle('active', b.innerText === cam));
+            document.getElementById('cam-name').innerText = `CAM ${cam}`;
+            updateCamView();
+        }
+
+        function updateCamView() {
+            const container = document.getElementById('cam-content');
+            container.innerHTML = '';
+            let contentHtml = '';
+            
+            // --- AQUÍ ESTÁ EL CAMBIO PRINCIPAL: SILUETAS EN LUGAR DE EMOJIS ---
+            if (AI.bonnie.location === GAME.currentCam) {
+                // Silueta de Bonnie (Morado)
+                contentHtml += `<div class="entity-silhouette entity-bonnie">
+                                    <div class="entity-eyes eye-left"></div>
+                                    <div class="entity-eyes eye-right"></div>
+                                </div>`;
+            }
+            if (AI.chica.location === GAME.currentCam) {
+                // Silueta de Chica (Amarillo)
+                contentHtml += `<div class="entity-silhouette entity-chica" style="margin-left: 20px;">
+                                    <div class="entity-eyes eye-left"></div>
+                                    <div class="entity-eyes eye-right"></div>
+                                </div>`;
+            }
+
+            let bgText = "";
+            if(GAME.currentCam.includes('1')) bgText = "SHOW STAGE"; else if(GAME.currentCam.includes('2')) bgText = "W. HALL";
+            else if(GAME.currentCam.includes('4')) bgText = "E. HALL"; else if(GAME.currentCam === '5') bgText = "BACKSTAGE";
+
+            container.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; width: 100%;">
+                <h2 style="color: #333; margin-bottom: 40px; text-shadow: 1px 1px 2px #000;">${bgText} <br><span style="font-size:0.6em">SIGNAL: POOR</span></h2>
+                <div style="display:flex; justify-content:center; width: 100%;">${contentHtml}</div>
+            </div>`;
+        }
+
+        // --- FINALES ---
+        function powerOutage() {
+            GAME.doorL = false; GAME.doorR = false; GAME.lightL = false; GAME.lightR = false;
+            GAME.cameraActive = false; document.getElementById('camera-screen').style.display = 'none';
+            document.getElementById('office-view').style.background = '#000';
+            document.querySelectorAll('.security-door').forEach(d => d.classList.remove('door-closed'));
+            let notes = [300, 250, 200, 250, 300, 300, 300]; let i = 0;
+            let music = setInterval(() => { if(i>=notes.length)i=0; AudioSys.playTone(notes[i++], 'triangle', 0.5, 0.2, false); }, 600);
+            setTimeout(() => { clearInterval(music); jumpScare('power'); }, 6000);
+        }
+
+        function jumpScare(source) {
+            if (GAME.dead) return;
+            GAME.dead = true; GAME.active = false;
+            document.getElementById('camera-screen').style.display = 'none';
+            AudioSys.sfxJumpscare();
+            const overlay = document.getElementById('jumpscare-overlay');
+            overlay.style.display = 'flex';
+            const face = document.getElementById('scare-face');
+            // Colores más siniestros para el jumpscare
+            if (source === 'left') face.style.background = "radial-gradient(circle at center, #fff 0%, #629 30%, #000 70%)";
+            else if (source === 'right') face.style.background = "radial-gradient(circle at center, #fff 0%, #880 30%, #000 70%)";
+            else face.style.background = "radial-gradient(circle at center, #fff 0%, #420 30%, #000 70%)";
+            setTimeout(() => { overlay.style.display = 'none'; document.getElementById('game-over-screen').style.display = 'flex'; }, 2000);
+        }
+
+        function winGame() { GAME.active = false; GAME.dead = true; document.getElementById('win-screen').style.display = 'flex'; }
+    </script>
+</body>
+</html>
